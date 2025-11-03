@@ -4,6 +4,8 @@
 #include <numeric>
 #include <sstream>
 #include <iomanip>
+#include <iostream>      // ADD THIS
+#include <vector>        // ADD THIS
 
 #ifdef __linux__
 #include <sched.h>

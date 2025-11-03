@@ -4,6 +4,9 @@
 #include <chrono>
 #include <string>
 #include <array>
+#include <atomic>        // ADD THIS
+#include <vector>        // ADD THIS
+#include <cstring>
 
 namespace lob {
 

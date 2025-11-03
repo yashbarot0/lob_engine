@@ -45,14 +45,16 @@ void run_synthetic_benchmark() {
     config.enable_logging = false;
     config.cpu_affinity = 0;
     
-    MatchingEngine engine(config);
-    engine.start();
+    // ALLOCATE ON HEAP instead of stack
+    auto engine = std::make_unique<MatchingEngine>(config);
+    engine->start();
     
     const char* symbol = "AAPL";
     const size_t num_orders = 1000000;
     
-    std::vector<uint64_t> latencies;
-    latencies.reserve(num_orders);
+    // Allocate latencies on heap too
+    auto latencies = std::make_unique<std::vector<uint64_t>>();
+    latencies->reserve(num_orders);
     
     std::cout << "Submitting " << num_orders << " orders..." << std::endl;
     
@@ -67,11 +69,11 @@ void run_synthetic_benchmark() {
         uint32_t price = base_price + (i % 100) * 100; // Price variation
         uint32_t quantity = 100 + (i % 900);
         
-        engine.submit_order(symbol, i, get_timestamp_ns(), 
+        engine->submit_order(symbol, i, get_timestamp_ns(), 
                           price, quantity, side, OrderType::LIMIT);
         
         uint64_t order_end = rdtsc();
-        latencies.push_back(order_end - order_start);
+        latencies->push_back(order_end - order_start);
     }
     
     uint64_t end_time = get_timestamp_ns();
@@ -79,7 +81,7 @@ void run_synthetic_benchmark() {
     
     // Calculate statistics
     double orders_per_sec = (num_orders * 1e9) / elapsed_ns;
-    LatencyStats stats = calculate_latency_stats(latencies);
+    LatencyStats stats = calculate_latency_stats(*latencies);
     
     std::cout << "\n=== Benchmark Results ===" << std::endl;
     std::cout << std::fixed << std::setprecision(2);
@@ -97,18 +99,19 @@ void run_synthetic_benchmark() {
     std::cout << "========================\n" << std::endl;
     
     // Print book state
-    print_book_state(engine.get_book(symbol));
+    print_book_state(engine->get_book(symbol));
     
     // Process execution reports
     size_t report_count = 0;
     ExecutionReport report;
-    while (engine.get_execution_queue().pop(report)) {
+    while (engine->get_execution_queue().pop(report)) {
         ++report_count;
     }
     
     std::cout << "Total Execution Reports: " << report_count << std::endl;
-    std::cout << "Total Matches: " << engine.get_total_matches() << std::endl;
+    std::cout << "Total Matches: " << engine->get_total_matches() << std::endl;
 }
+
 
 int main(int argc, char** argv) {
     std::cout << "Ultra-Low-Latency Limit Order Book & Matching Engine" << std::endl;

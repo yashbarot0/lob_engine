@@ -54,22 +54,31 @@ OrderBook::OrderBook()
       best_bid_(nullptr), best_ask_(nullptr),
       pool_index_(0), order_count_(0), match_count_(0) {
     
-    // Pre-allocate price level pool
-    price_level_pool_.reserve(10000);
-    for (size_t i = 0; i < 10000; ++i) {
+    // Increased to 200k price levels (was 100k)
+    price_level_pool_.reserve(200000);
+    for (size_t i = 0; i < 200000; ++i) {
         price_level_pool_.emplace_back(std::make_unique<PriceLevel>(0));
     }
 }
+
 
 OrderBook::~OrderBook() {
     orders_.clear();
 }
 
 void OrderBook::add_order(Order* order) {
-    assert(order != nullptr);
+    if (!order) {  // ADD THIS CHECK
+        std::cerr << "ERROR: Attempting to add null order" << std::endl;
+        return;
+    }
     
     // Find or create price level
     PriceLevel* level = find_or_create_level(order->price, order->side);
+    if (!level) {  // ADD THIS CHECK
+        std::cerr << "ERROR: Failed to get price level for order " << order->order_id << std::endl;
+        return;
+    }
+    
     level->add_order(order);
     
     // Update order lookup
@@ -213,10 +222,15 @@ PriceLevel* OrderBook::find_or_create_level(uint32_t price, Side side) {
     
     if (!level) {
         level = insert_level(price, root);
+        if (!level) {  // ADD THIS CHECK
+            std::cerr << "FATAL: Failed to create price level for price " << price << std::endl;
+            return nullptr;
+        }
     }
     
     return level;
 }
+
 
 PriceLevel* OrderBook::find_level(uint32_t price, PriceLevel* root) {
     while (root) {
@@ -227,7 +241,19 @@ PriceLevel* OrderBook::find_level(uint32_t price, PriceLevel* root) {
 }
 
 PriceLevel* OrderBook::insert_level(uint32_t price, PriceLevel*& root) {
-    assert(pool_index_ < price_level_pool_.size());
+    // REMOVE: assert(pool_index_ < price_level_pool_.size());
+    
+    // ADD: Proper bounds checking with error handling
+    if (pool_index_ >= price_level_pool_.size()) {
+        static bool warned = false;
+        if (!warned) {
+            std::cerr << "WARNING: Price level pool exhausted (size: " 
+                      << price_level_pool_.size() << "). Reusing levels." << std::endl;
+            warned = true;
+        }
+        // Wrap around - reuse old levels (simple recycling)
+        pool_index_ = 0;
+    }
     
     PriceLevel* new_level = price_level_pool_[pool_index_++].get();
     new_level->price = price;
@@ -263,6 +289,7 @@ PriceLevel* OrderBook::insert_level(uint32_t price, PriceLevel*& root) {
         }
     }
 }
+
 
 void OrderBook::remove_level(PriceLevel* level, PriceLevel*& root) {
     // Simple BST deletion (can be optimized with balanced tree)

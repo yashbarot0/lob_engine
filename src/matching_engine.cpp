@@ -65,6 +65,7 @@ MatchingEngine::~MatchingEngine() {
 #endif
 }
 
+
 void MatchingEngine::submit_order(const char* symbol, uint64_t order_id,
                                   uint64_t timestamp, uint32_t price,
                                   uint32_t quantity, Side side, OrderType type) {
@@ -77,6 +78,16 @@ void MatchingEngine::submit_order(const char* symbol, uint64_t order_id,
     
     // Allocate order from pool
     Order* order = allocate_order();
+    if (!order) {
+        // Don't spam stderr on every failure
+        static std::atomic<size_t> error_count{0};
+        if (error_count.fetch_add(1) % 100000 == 0) {
+            std::cerr << "ERROR: Order pool exhausted at order " << order_id 
+                      << " (suppressing further messages)" << std::endl;
+        }
+        return;
+    }
+    
     order->order_id = order_id;
     order->timestamp = timestamp;
     order->price = price;
@@ -95,7 +106,10 @@ void MatchingEngine::submit_order(const char* symbol, uint64_t order_id,
         
         // Push execution reports to queue
         for (const auto& report : reports) {
-            execution_queue_.push(report);
+            if (!execution_queue_.push(report)) {
+                std::cerr << "WARNING: Execution queue full!" << std::endl;
+                break;
+            }
             ++total_matches_;
         }
     }
@@ -109,6 +123,7 @@ void MatchingEngine::submit_order(const char* symbol, uint64_t order_id,
     
     ++total_orders_;
 }
+
 
 void MatchingEngine::cancel_order(const char* symbol, uint64_t order_id) {
     OrderBook* book = get_book(symbol);
@@ -140,7 +155,14 @@ void MatchingEngine::stop() {
 
 Order* MatchingEngine::allocate_order() {
     size_t idx = pool_index_.fetch_add(1, std::memory_order_relaxed);
-    return order_pool_[idx % config_.order_pool_size];
+    
+    // CRITICAL: Check bounds
+    if (idx >= config_.order_pool_size) {
+        std::cerr << "ERROR: Order pool exhausted at index " << idx << std::endl;
+        return nullptr;
+    }
+    
+    return order_pool_[idx];
 }
 
 void MatchingEngine::deallocate_order(Order* order) {

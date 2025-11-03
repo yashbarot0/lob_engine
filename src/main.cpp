@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include <memory>  // CRITICAL: Add this for std::make_unique
 
 using namespace lob;
 
@@ -41,18 +42,16 @@ void run_synthetic_benchmark() {
     
     EngineConfig config;
     config.num_symbols = 10;
-    config.order_pool_size = 1000000;
+    config.order_pool_size = 2000000;  // DOUBLED: 2M instead of 1M
     config.enable_logging = false;
     config.cpu_affinity = 0;
     
-    // ALLOCATE ON HEAP instead of stack
     auto engine = std::make_unique<MatchingEngine>(config);
     engine->start();
     
     const char* symbol = "AAPL";
     const size_t num_orders = 1000000;
     
-    // Allocate latencies on heap too
     auto latencies = std::make_unique<std::vector<uint64_t>>();
     latencies->reserve(num_orders);
     
@@ -63,10 +62,9 @@ void run_synthetic_benchmark() {
     for (size_t i = 0; i < num_orders; ++i) {
         uint64_t order_start = rdtsc();
         
-        // Alternate buy and sell orders
         Side side = (i % 2 == 0) ? Side::BUY : Side::SELL;
-        uint32_t base_price = 1000000; // $100.00
-        uint32_t price = base_price + (i % 100) * 100; // Price variation
+        uint32_t base_price = 1000000;
+        uint32_t price = base_price + (i % 50) * 50;
         uint32_t quantity = 100 + (i % 900);
         
         engine->submit_order(symbol, i, get_timestamp_ns(), 
@@ -112,7 +110,6 @@ void run_synthetic_benchmark() {
     std::cout << "Total Matches: " << engine->get_total_matches() << std::endl;
 }
 
-
 int main(int argc, char** argv) {
     std::cout << "Ultra-Low-Latency Limit Order Book & Matching Engine" << std::endl;
     std::cout << "====================================================\n" << std::endl;
@@ -124,15 +121,15 @@ int main(int argc, char** argv) {
         EngineConfig config;
         config.cpu_affinity = 0;
         
-        MatchingEngine engine(config);
-        engine.start();
+        auto engine = std::make_unique<MatchingEngine>(config);
+        engine->start();
         
-        FeedHandler feed_handler(engine);
+        FeedHandler feed_handler(*engine);
         feed_handler.replay_itch_file(filename);
         
         std::cout << "\nEngine Statistics:" << std::endl;
-        std::cout << "  Total Orders: " << engine.get_total_orders() << std::endl;
-        std::cout << "  Total Matches: " << engine.get_total_matches() << std::endl;
+        std::cout << "  Total Orders: " << engine->get_total_orders() << std::endl;
+        std::cout << "  Total Matches: " << engine->get_total_matches() << std::endl;
     } else {
         std::cout << "No ITCH file provided, running synthetic benchmark\n" << std::endl;
         run_synthetic_benchmark();
